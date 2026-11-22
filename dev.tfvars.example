@@ -1,0 +1,11 @@
+region                               = "ap-south-2"
+environment                          = "dev"
+cluster_name                         = "dev-eks"
+single_nat_gateway                   = true
+cluster_endpoint_public_access_cidrs = ["YOUR.PUBLIC.IP/32"] # restrict to your office/VPN
+cluster_admin_arns                   = []                    # e.g. SSO admin role ARN
+app_namespace                        = "app"
+app_service_account                  = "app"
+app_policy_arns                      = {}                    # e.g. { S3Read = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess" }
+alarm_email                          = ""                    # e.g. "team@example.com" (confirm the email AWS sends)
+log_retention_days                   = 30

@@ -1,0 +1,117 @@
+# Terraform CI/CD for the EKS stack.
+#   Pull request -> fmt, validate, plan (shown in the job summary)
+#   Push to main -> plan, then apply that exact plan after approval of the "dev" environment
+#
+# Repo variables needed (Settings > Secrets and variables > Actions > Variables):
+#   AWS_ROLE_ARN      output github_actions_role_arn from ./bootstrap
+#   TF_STATE_BUCKET   output state_bucket from ./bootstrap
+#   API_CIDRS         JSON list, e.g. ["203.0.113.10/32"]  (who may reach the public EKS API)
+#   CLUSTER_ADMIN_ARNS  optional JSON list of IAM role ARNs to make cluster admin
+#   ALARM_EMAIL         optional
+#   RUNNER_LABEL        optional, label of a self-hosted runner inside the VPC (default: ubuntu-latest)
+name: terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write # needed for OIDC
+  contents: read
+
+# Never run two Terraform jobs against the same state at once.
+concurrency:
+  group: terraform-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-2
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VAR_cluster_endpoint_public_access_cidrs: ${{ vars.API_CIDRS }}
+  TF_VAR_cluster_admin_arns: ${{ vars.CLUSTER_ADMIN_ARNS || '[]' }}
+  TF_VAR_alarm_email: ${{ vars.ALARM_EMAIL }}
+
+jobs:
+  plan:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required variables
+        run: |
+          for v in AWS_ROLE_ARN TF_STATE_BUCKET API_CIDRS; do
+            case "$v" in
+              AWS_ROLE_ARN) val='${{ vars.AWS_ROLE_ARN }}' ;;
+              TF_STATE_BUCKET) val='${{ vars.TF_STATE_BUCKET }}' ;;
+              API_CIDRS) val='${{ vars.API_CIDRS }}' ;;
+            esac
+            [ -n "$val" ] || { echo "::error::Repo variable $v is not set"; exit 1; }
+          done
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Plan
+        run: terraform plan -out=tfplan
+
+      - name: Show plan in job summary
+        run: |
+          {
+            echo '### Terraform plan'
+            echo '```'
+            terraform show -no-color tfplan | head -c 900000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only needed on main, where apply reuses it. The plan can contain sensitive values, so keep it 1 day.
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: tfplan
+          path: tfplan
+          retention-days: 1
+
+  apply:
+    needs: plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    # Add "Required reviewers" to this environment in GitHub to get a manual approval gate.
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+
+      - name: Apply the reviewed plan
+        run: terraform apply tfplan
