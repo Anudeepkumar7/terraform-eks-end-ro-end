@@ -38,6 +38,18 @@ resource "aws_ecr_lifecycle_policy" "app" {
       },
       {
         rulePriority = 2
+        description  = "Expire PR snapshot images (snapshot-*) after ${var.ecr_snapshot_expire_days} days"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["snapshot-"]
+          countType     = "sinceImagePushed"
+          countUnit     = "days"
+          countNumber   = var.ecr_snapshot_expire_days
+        }
+        action = { type = "expire" }
+      },
+      {
+        rulePriority = 3
         description  = "Keep only the last ${var.ecr_keep_last_images} images"
         selection = {
           tagStatus   = "any"

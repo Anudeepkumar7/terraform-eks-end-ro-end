@@ -132,3 +132,22 @@ variable "ecr_keep_last_images" {
   type        = number
   default     = 30
 }
+
+variable "ecr_snapshot_expire_days" {
+  description = "Days after which PR snapshot images (tag prefix snapshot-) expire from ECR"
+  type        = number
+  default     = 7
+}
+
+
+variable "ecr_push_github_repo" {
+  description = "GitHub repo (owner/name) whose Actions pipeline may push images to ECR via OIDC (the repo that builds the images)"
+  type        = string
+  default     = "Anudeepkumar7/ultimate-devops-project-demo"
+}
+
+variable "ecr_push_allow_pull_requests" {
+  description = "Also let pull request runs of that repo assume the push role (for snapshot-* tags). false = main branch only."
+  type        = bool
+  default     = true
+}

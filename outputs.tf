@@ -37,3 +37,8 @@ output "ecr_repository_urls" {
   description = "Push your images here, e.g. docker push <url>:<tag>"
   value       = { for k, r in aws_ecr_repository.app : k => r.repository_url }
 }
+
+output "ecr_push_role_arn" {
+  description = "Use as AWS_ROLE_ARN in the image-building repo's docker-ecr workflow"
+  value       = aws_iam_role.ecr_push.arn
+}

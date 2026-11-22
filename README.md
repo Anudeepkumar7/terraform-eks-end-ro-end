@@ -73,6 +73,13 @@ kubectl get nodes
 ```
 Your identity must be in `CLUSTER_ADMIN_ARNS`, and your IP in `API_CIDRS`, or kubectl is denied.
 
+### Step 6b. ECR push role for the image-building repo
+Terraform creates the push-only role `<cluster_name>-ecr-push` (file `ecr-push-role.tf`), trusted through the
+GitHub OIDC provider from bootstrap, for the repo in `ecr_push_github_repo`. After apply, read the
+`ecr_push_role_arn` output and use it as `AWS_ROLE_ARN` in that repo's docker-ecr workflow.
+It can push to `<cluster_name>/*` repositories only. `main` and, unless `ecr_push_allow_pull_requests = false`,
+pull requests of that repo may assume it.
+
 ### Step 7. Deploy your app
 1. Push an image to ECR (URL is the `ecr_repository_urls` output):
    ```
